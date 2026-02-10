@@ -3,6 +3,8 @@ import { FileText, Zap, AlertTriangle, Megaphone, Loader2, Shield, Key, Info } f
 import './App.css'
 
 function App() {
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  
   const [transcript, setTranscript] = useState('')
   const [modelChoice, setModelChoice] = useState('gemini-2.0-flash')
   const [documentation, setDocumentation] = useState(null)
@@ -39,7 +41,7 @@ PM: Good point. Let's also add two-factor authentication, but that can be a sepa
     setDocumentation(null)
 
     try {
-      const response = await fetch('http://localhost:8000/api/generate', {
+      const response = await fetch(`${API_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
