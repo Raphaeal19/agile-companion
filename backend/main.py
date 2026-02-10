@@ -1,11 +1,11 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
-from collections import defaultdict 
-from datetime import datetime, timedelta
 import os
 import json
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
+from collections import defaultdict
 from models import (
     TranscriptRequest, 
     DocumentationPackage, 
@@ -26,8 +26,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://agile-companion-ebon.vercel.app",  # Add your Vercel URL
-        "https://*.vercel.app",  # Allow all Vercel preview deployments
+        "https://agile-companion-ebon.vercel.app",
+        "https://*.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -36,12 +36,18 @@ app.add_middleware(
 
 # Rate limiting for demo mode
 demo_usage = defaultdict(list)
-DEMO_LIMIT = 5  # 5 requests per hour
-DEMO_WINDOW = 3600  # 1 hour in seconds
+DEMO_LIMIT = 5
+DEMO_WINDOW = 3600
 
 # Configure Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
+
+# Configure API key ONCE at startup
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    print("WARNING: GEMINI_API_KEY not set!")
 
 def check_rate_limit(client_ip: str) -> bool:
     """Check if client has exceeded demo rate limit"""
@@ -51,17 +57,14 @@ def check_rate_limit(client_ip: str) -> bool:
     now = datetime.now()
     cutoff = now - timedelta(seconds=DEMO_WINDOW)
     
-    # Remove old requests
     demo_usage[client_ip] = [
         timestamp for timestamp in demo_usage[client_ip]
         if timestamp > cutoff
     ]
     
-    # Check limit
     if len(demo_usage[client_ip]) >= DEMO_LIMIT:
         return False
     
-    # Record this request
     demo_usage[client_ip].append(now)
     return True
 
@@ -69,6 +72,7 @@ def check_rate_limit(client_ip: str) -> bool:
 def read_root():
     return {
         "message": "AI Agile Companion API",
+        "demo_mode": DEMO_MODE,
         "endpoints": {
             "/health": "Health check",
             "/api/generate": "Generate documentation from transcript"
@@ -87,25 +91,19 @@ def health_check():
 async def generate_documentation(request: TranscriptRequest, req: Request):
     """
     Generate complete Agile documentation package from meeting transcript.
-    
-    Returns:
-    - Product Backlog Items (with DoR checks)
-    - Decision Log
-    - Risk Register
-    - Release Notes Draft
     """
-
-      # Check rate limit in demo mode
+    if not GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=500, 
+            detail="Service temporarily unavailable. API key not configured."
+        )
+    
+    # Check rate limit
     client_ip = req.client.host
     if not check_rate_limit(client_ip):
         raise HTTPException(
             status_code=429,
-            detail=f"Demo mode: Rate limit exceeded. You can make {DEMO_LIMIT} requests per hour. Please try again later or use your own API key."
-        )
-    if not GEMINI_API_KEY:
-        raise HTTPException(
-            status_code=500, 
-            detail="GEMINI_API_KEY not configured"
+            detail=f"Demo mode: Rate limit exceeded. You can make {DEMO_LIMIT} requests per hour."
         )
     
     if not request.transcript.strip():
@@ -115,127 +113,106 @@ async def generate_documentation(request: TranscriptRequest, req: Request):
         )
     
     try:
+        # Create model
         model = genai.GenerativeModel(request.model_choice)
         
-        # Enhanced prompt with explicit JSON structure
-
+        generation_config = {
+            "temperature": 0.7,
+            "max_output_tokens": 8192,
+        }
+        
         prompt = f"""
-        You are a Senior Technical Product Manager with expertise in Agile/Scrum methodology.
-        Analyze the following meeting transcript and produce a formal Agile documentation package.
+You are a Senior Technical Product Manager with expertise in Agile/Scrum methodology.
+Analyze the following meeting transcript and produce a formal Agile documentation package.
 
-        CRITICAL INSTRUCTIONS:
-        1. **Complexity (Not Points):** Do not assign Story Points. Instead, estimate T-Shirt size (XS, S, M, L, XL) based on implied complexity.
-        2. **Definition of Ready:** If a requirement is vague or lacks detail, mark it as "Needs Refinement" and specify what information is missing.
-        3. **Decisions:** Extract specific architectural, scope, or process decisions made during the meeting.
-        4. **Risks & Assumptions:** Identify technical risks, dependencies, and assumptions that could impact delivery.
-        5. **Release Notes:** Write value-focused, non-technical summaries suitable for stakeholders.
-        6. **SCOPE SENTINEL:** Analyze for scope creep indicators including:
-          - New features mentioned beyond original intent
-          - Requirements that grew in complexity during discussion
-          - Unclear boundaries that could expand later
-          - Timeline pressure combined with feature additions
-          - "Just one more thing" patterns
-          - Technical debt being added
+CRITICAL INSTRUCTIONS:
+1. **Complexity:** Estimate T-Shirt size (XS, S, M, L, XL) based on implied complexity.
+2. **Definition of Ready:** If vague, mark as "Needs Refinement" with missing info.
+3. **Decisions:** Extract key architectural/scope decisions.
+4. **Risks:** Identify technical risks and dependencies.
+5. **Release Notes:** Write concise, non-technical summaries.
+6. **SCOPE SENTINEL:** Flag scope creep indicators.
 
-        TRANSCRIPT:
-        {request.transcript}
+TRANSCRIPT:
+{request.transcript}
 
-        You MUST respond with ONLY valid JSON in this EXACT structure (no markdown, no explanations):
+Respond with ONLY valid JSON (no markdown):
 
-        {{
-          "meeting_summary": "Brief 2-3 sentence summary of what was discussed",
-          "backlog_items": [
-            {{
-              "id": "PBI-001",
-              "title": "Short descriptive title",
-              "user_story": "As a [user type], I want [goal], so that [benefit]",
-              "priority": "Must Have",
-              "complexity": "M",
-              "definition_of_ready_status": "Ready for Sprint",
-              "missing_info": "",
-              "acceptance_criteria": [
-                {{
-                  "condition": "Specific testable condition",
-                  "test_type": "Functional"
-                }}
-              ]
-            }}
-          ],
-          "decision_log": [
-            {{
-              "topic": "Decision topic",
-              "decision_made": "What was decided",
-              "rationale": "Why this decision was made",
-              "owner": "Person responsible"
-            }}
-          ],
-          "risk_register": [
-            {{  
-              "category": "Risk",
-              "description": "What could go wrong",
-              "impact": "High",
-              "mitigation_strategy": "How to address it"
-            }}
-          ],
-          "release_notes_draft": [
-            {{
-              "feature_name": "Feature name",
-              "value_statement": "Non-technical benefit to users",
-              "audience": "External Customers"
-            }}
-          ],
-          "scope_sentinel": {{
-            "overall_risk": "Medium",
-            "summary": "Brief assessment of scope health and creep indicators",
-            "alerts": [
-              {{
-                "severity": "Medium",
-                "category": "Feature Creep",
-                "description": "What scope creep was detected",
-                "quote": "Exact quote from transcript showing the issue",
-                "recommendation": "How to address this",
-                "impacted_items": ["PBI-001", "PBI-002"]
-              }}
-            ],
-            "metrics": {{
-              "features_discussed": 5,
-              "new_items_added": 2,
-              "complexity_increases": 1,
-              "unclear_requirements": 3
-            }}
-          }}
-        }}
+{{
+  "meeting_summary": "2-3 sentence summary",
+  "backlog_items": [
+    {{
+      "id": "PBI-001",
+      "title": "Short title",
+      "user_story": "As a [user], I want [goal], so that [benefit]",
+      "priority": "Must Have",
+      "complexity": "M",
+      "definition_of_ready_status": "Ready for Sprint",
+      "missing_info": "",
+      "acceptance_criteria": [
+        {{"condition": "Testable condition", "test_type": "Functional"}}
+      ]
+    }}
+  ],
+  "decision_log": [
+    {{"topic": "Topic", "decision_made": "Decision", "rationale": "Why", "owner": "Who"}}
+  ],
+  "risk_register": [
+    {{"category": "Risk", "description": "Description", "impact": "High", "mitigation_strategy": "How to address"}}
+  ],
+  "release_notes_draft": [
+    {{"feature_name": "Feature", "value_statement": "User benefit", "audience": "External Customers"}}
+  ],
+  "scope_sentinel": {{
+    "overall_risk": "Medium",
+    "summary": "Brief scope assessment (1-2 sentences)",
+    "alerts": [
+      {{
+        "severity": "Medium",
+        "category": "Feature Creep",
+        "description": "Brief description",
+        "quote": "Brief quote (max 20 words)",
+        "recommendation": "Brief recommendation",
+        "impacted_items": ["PBI-001"]
+      }}
+    ],
+    "metrics": {{
+      "features_discussed": 5,
+      "new_items_added": 2,
+      "complexity_increases": 1,
+      "unclear_requirements": 3
+    }}
+  }}
+}}
 
-        Valid values:
-        - priority: "Must Have", "Should Have", "Could Have", "Won't Have"
-        - complexity: "XS", "S", "M", "L", "XL", "Needs Discussion"
-        - definition_of_ready_status: "Ready for Sprint", "Needs Refinement"
-        - test_type: "Functional", "UI/UX", "Security", "Performance", "Regression"
-        - category (risk): "Risk", "Assumption", "Dependency"
-        - impact: "High", "Medium", "Low"
-        - audience: "Internal Users", "External Customers", "Admins", "Developers"
-        - severity (scope): "Low", "Medium", "High", "Critical"
-        - category (scope): "Feature Creep", "Scope Expansion", "Timeline Pressure", "Unclear Requirements", "Technical Debt", "Resource Constraint"
-        - overall_risk: "Low", "Medium", "High", "Critical"
+RULES:
+- Keep quotes under 20 words
+- Maximum 5 backlog items
+- Maximum 3 acceptance criteria per item
+- Maximum 3 scope alerts
+- Be concise but complete
 
-        RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT.
-        """
+Valid values:
+- priority: "Must Have", "Should Have", "Could Have", "Won't Have"
+- complexity: "XS", "S", "M", "L", "XL", "Needs Discussion"
+- definition_of_ready_status: "Ready for Sprint", "Needs Refinement"
+- test_type: "Functional", "UI/UX", "Security", "Performance", "Regression"
+- category (risk): "Risk", "Assumption", "Dependency"
+- impact: "High", "Medium", "Low"
+- audience: "Internal Users", "External Customers", "Admins", "Developers"
+- severity: "Low", "Medium", "High", "Critical"
+- category (scope): "Feature Creep", "Scope Expansion", "Timeline Pressure", "Unclear Requirements", "Technical Debt", "Resource Constraint"
+- overall_risk: "Low", "Medium", "High", "Critical"
+"""
         
         # Generate content
-        response = model.generate_content(
-            prompt,
-            generation_config= {
-                "temperature": 0.7,
-                "max_output_tokens": 8192,
-            }
-        )
+        response = model.generate_content(prompt, generation_config=generation_config)
         response_text = response.text.strip()
         
-        # Clean up response (remove markdown code blocks if present)
+        # Clean up response
         if response_text.startswith("```"):
-            # Remove ```json or ``` markers
             lines = response_text.split('\n')
-            response_text = '\n'.join(lines[1:-1])  # Remove first and last line
+            response_text = '\n'.join(lines[1:-1])
         
         # Parse JSON
         data = json.loads(response_text)
@@ -248,9 +225,11 @@ async def generate_documentation(request: TranscriptRequest, req: Request):
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to parse Gemini response as JSON. Response: {response_text[:200]}..."
+            detail=f"Failed to parse response. Please try again."
         )
     except Exception as e:
+        # Log the full error for debugging
+        print(f"Error generating documentation: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error generating documentation: {str(e)}"
