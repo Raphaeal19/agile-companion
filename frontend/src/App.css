@@ -609,3 +609,129 @@ main.container {
   color: #166534;
   border-left: 4px solid var(--success);
 }
+
+/* Demo Banner */
+.demo-banner {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.demo-banner svg {
+  flex-shrink: 0;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: white;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+  padding: 0;
+}
+
+.link-button:hover {
+  opacity: 0.8;
+}
+
+/* API Info Box */
+.api-info-box {
+  background: white;
+  color: var(--text);
+  padding: 2rem;
+  border-radius: 12px;
+  margin-top: 1rem;
+  text-align: left;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.api-info-box h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  color: var(--primary);
+}
+
+.api-info-box ol {
+  margin-left: 1.5rem;
+  line-height: 1.8;
+}
+
+.api-info-box ol li {
+  margin-bottom: 0.75rem;
+}
+
+.api-info-box a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.api-info-box a:hover {
+  text-decoration: underline;
+}
+
+.api-info-box pre {
+  background: var(--bg);
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+.api-info-box .note {
+  background: #eff6ff;
+  border-left: 4px solid var(--info);
+  padding: 1rem;
+  margin-top: 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* Rate Limit Error */
+.error-banner.rate-limit {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-action-button {
+  background: white;
+  color: var(--primary);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.error-action-button:hover {
+  transform: translateY(-2px);
+}

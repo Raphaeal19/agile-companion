@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
+from collections import defaultdict 
+from datetime import datetime, timedelta
 import os
 import json
 from dotenv import load_dotenv
@@ -27,10 +29,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting for demo mode
+demo_usage = defaultdict(list)
+DEMO_LIMIT = 5  # 5 requests per hour
+DEMO_WINDOW = 3600  # 1 hour in seconds
+
 # Configure Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Check if client has exceeded demo rate limit"""
+    if not DEMO_MODE:
+        return True
+    
+    now = datetime.now()
+    cutoff = now - timedelta(seconds=DEMO_WINDOW)
+    
+    # Remove old requests
+    demo_usage[client_ip] = [
+        timestamp for timestamp in demo_usage[client_ip]
+        if timestamp > cutoff
+    ]
+    
+    # Check limit
+    if len(demo_usage[client_ip]) >= DEMO_LIMIT:
+        return False
+    
+    # Record this request
+    demo_usage[client_ip].append(now)
+    return True
 
 @app.get("/")
 def read_root():
@@ -51,7 +79,7 @@ def health_check():
     )
 
 @app.post("/api/generate", response_model=DocumentationPackage)
-async def generate_documentation(request: TranscriptRequest):
+async def generate_documentation(request: TranscriptRequest, req: Request):
     """
     Generate complete Agile documentation package from meeting transcript.
     
@@ -61,7 +89,14 @@ async def generate_documentation(request: TranscriptRequest):
     - Risk Register
     - Release Notes Draft
     """
-    print(request)
+
+      # Check rate limit in demo mode
+    client_ip = req.client.host
+    if not check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Demo mode: Rate limit exceeded. You can make {DEMO_LIMIT} requests per hour. Please try again later or use your own API key."
+        )
     if not GEMINI_API_KEY:
         raise HTTPException(
             status_code=500, 
@@ -184,7 +219,10 @@ async def generate_documentation(request: TranscriptRequest):
         # Generate content
         response = model.generate_content(
             prompt,
-            generation_config={"max_output_tokens": 8192}
+            generation_config= {
+                "temperature": 0.7,
+                "max_output_tokens": 8192,
+            }
         )
         response_text = response.text.strip()
         

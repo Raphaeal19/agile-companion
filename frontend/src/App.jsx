@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Zap, AlertTriangle, Megaphone, Loader2, Shield } from 'lucide-react'
+import { FileText, Zap, AlertTriangle, Megaphone, Loader2, Shield, Key, Info } from 'lucide-react'
 import './App.css'
 
 function App() {
@@ -9,6 +9,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('backlog')
+  const [showApiInfo, setShowApiInfo] = useState(false)
   const getSeverityColor = (severity) => {
     const colors = {
       'Low': 'var(--success)',
@@ -94,6 +95,55 @@ PM: Good point. Let's also add two-factor authentication, but that can be a sepa
         <div className="container">
           <h1>🤖 AI Agile Companion</h1>
           <p>Transform meeting transcripts into structured Agile documentation</p>
+
+          {/* Demo Mode Banner */}
+          <div className="demo-banner">
+            <Info size={16} />
+            <span>
+              <strong>Demo Mode:</strong> Try it for free! Limited to 5 generations per hour.
+              <button
+                onClick={() => setShowApiInfo(!showApiInfo)}
+                className="link-button"
+              >
+                Want unlimited access?
+              </button>
+            </span>
+          </div>
+
+          {/* API Key Instructions (Collapsible) */}
+          {showApiInfo && (
+            <div className="api-info-box">
+              <h3>
+                <Key size={20} />
+                Get Your Own API Key (Free!)
+              </h3>
+              <ol>
+                <li>
+                  Go to{' '}
+                  <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer">
+                    Google AI Studio
+                  </a>
+                </li>
+                <li>Click "Create API Key"</li>
+                <li>Copy your key</li>
+                <li>
+                  Run this app locally with your key:
+                  <pre>
+                    git clone https://github.com/YOUR_USERNAME/ai-agile-companion
+                    cd ai-agile-companion/backend
+                    echo "GEMINI_API_KEY=your_key_here" &gt; .env
+                    python -m venv venv
+                    source venv/bin/activate
+                    pip install -r requirements.txt
+                    uvicorn main:app --reload
+                  </pre>
+                </li>
+              </ol>
+              <p className="note">
+                📝 <strong>Note:</strong> Google's free tier includes 60 requests per minute!
+              </p>
+            </div>
+          )}
         </div>
       </header>
 
@@ -141,8 +191,16 @@ PM: Good point. Let's also add two-factor authentication, but that can be a sepa
 
         {/* Error Display */}
         {error && (
-          <div className="error-banner">
+          <div className={error.includes('Rate limit') ? 'error-banner rate-limit' : 'error-banner'}>
             ⚠️ {error}
+            {error.includes('Rate limit') && (
+              <button
+                onClick={() => setShowApiInfo(true)}
+                className="error-action-button"
+              >
+                Get Unlimited Access
+              </button>
+            )}
           </div>
         )}
 
